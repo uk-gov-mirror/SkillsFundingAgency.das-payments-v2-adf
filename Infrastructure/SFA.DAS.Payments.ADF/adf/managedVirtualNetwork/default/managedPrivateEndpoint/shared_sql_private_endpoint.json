@@ -1,0 +1,10 @@
+{
+	"name": "shared_sql_private_endpoint",
+	"properties": {
+		"privateLinkResourceId": "/subscriptions/2f538936-0715-4dfd-83da-6b8c5a399d6a/resourceGroups/DCOL-MO-SqlServer/providers/Microsoft.Sql/servers/DCOL-MO-sqlserver-weu",
+		"groupId": "sqlServer",
+		"fqdns": [
+			"dcol-mo-sqlserver-weu.database.windows.net"
+		]
+	}
+}

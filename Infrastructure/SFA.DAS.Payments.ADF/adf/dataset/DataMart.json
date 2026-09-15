@@ -1,0 +1,31 @@
+{
+	"name": "DataMart",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "datamart_stagingDB_linkedservices",
+			"type": "LinkedServiceReference"
+		},
+		"parameters": {
+			"Table": {
+				"type": "string"
+			},
+			"Schema": {
+				"type": "string"
+			}
+		},
+		"annotations": [],
+		"type": "AzureSqlTable",
+		"schema": [],
+		"typeProperties": {
+			"schema": {
+				"value": "@dataset().Schema",
+				"type": "Expression"
+			},
+			"table": {
+				"value": "@dataset().Table",
+				"type": "Expression"
+			}
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

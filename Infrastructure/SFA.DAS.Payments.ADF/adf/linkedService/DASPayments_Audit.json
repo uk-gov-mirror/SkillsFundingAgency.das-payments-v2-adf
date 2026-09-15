@@ -1,0 +1,22 @@
+{
+	"name": "DASPayments_Audit",
+	"type": "Microsoft.DataFactory/factories/linkedservices",
+	"properties": {
+		"annotations": [],
+		"type": "AzureSqlDatabase",
+		"typeProperties": {
+			"connectionString": {
+				"type": "AzureKeyVaultSecret",
+				"store": {
+					"referenceName": "AzureKeyVault1",
+					"type": "LinkedServiceReference"
+				},
+				"secretName": "DASPaymentAuditDataFactoryConnectionString"
+			}
+		},
+		"connectVia": {
+			"referenceName": "AzureVNETIntegrationRuntime",
+			"type": "IntegrationRuntimeReference"
+		}
+	}
+}

@@ -1,0 +1,19 @@
+{
+	"name": "datamart_stagingDB_linkedservices",
+	"type": "Microsoft.DataFactory/factories/linkedservices",
+	"properties": {
+		"annotations": [],
+		"type": "AzureSqlDatabase",
+		"typeProperties": {
+			"server": "das-mo-shared-sql.database.windows.net",
+			"database": "das-mo-datamgmt-staging-db",
+			"encrypt": "mandatory",
+			"trustServerCertificate": false,
+			"authenticationType": "SystemAssignedManagedIdentity"
+		},
+		"connectVia": {
+			"referenceName": "AzureVNETIntegrationRuntime",
+			"type": "IntegrationRuntimeReference"
+		}
+	}
+}

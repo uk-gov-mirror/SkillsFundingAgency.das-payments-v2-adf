@@ -1,0 +1,10 @@
+{
+	"name": "datamart_sql_private_endpoint",
+	"properties": {
+		"privateLinkResourceId": "/subscriptions/68ab4436-8f5b-4dff-8339-29959af2a674/resourceGroups/das-mo-shared-rg/providers/Microsoft.Sql/servers/das-mo-shared-sql",
+		"groupId": "sqlServer",
+		"fqdns": [
+			"das-mo-shared-sql.database.windows.net"
+		]
+	}
+}

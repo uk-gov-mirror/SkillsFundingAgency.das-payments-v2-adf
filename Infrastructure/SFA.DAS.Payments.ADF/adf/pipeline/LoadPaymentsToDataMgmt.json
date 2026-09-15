@@ -1,0 +1,1248 @@
+{
+	"name": "LoadPaymentsToDataMgmt",
+	"properties": {
+		"activities": [
+			{
+				"name": "GenerateRunId",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[dbo].[GenerateRunId]",
+					"storedProcedureParameters": {
+						"PipelineName": {
+							"value": "LoadPaymentsToDataMgmt",
+							"type": "String"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "datamart_stagingDB_linkedservices",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "GetDASPaymentsMetadataFull",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "SetRunId",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": "select *  FROM [Mgmt].[Config_StgPmnts] where LoadType = 'Full' and SourceDBName = 'DASPayments'",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DataMart",
+						"type": "DatasetReference",
+						"parameters": {
+							"Table": "test",
+							"Schema": "test"
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEachPaymentsTable_FullLoad",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "GetDASPaymentsMetadataFull",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('GetDASPaymentsMetadataFull').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "PaymentsTableFullLoad",
+							"type": "Copy",
+							"dependsOn": [
+								{
+									"activity": "LogStartOfPaymentsTableFullLoad",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "@concat('select ',item().ColumnsToInclude,' from ',item().SourceTable,' ', replace(replace(item().WhereClause,'ParamAcademicYear',pipeline().parameters.AcademicYear),'ParamCollectionPeriod',pipeline().parameters.CollectionPeriod))",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"sink": {
+									"type": "AzureSqlSink",
+									"preCopyScript": {
+										"value": "TRUNCATE TABLE @{concat(item().DestSchema,'.',item().DestTable)}",
+										"type": "Expression"
+									},
+									"writeBehavior": "insert",
+									"sqlWriterUseTableLock": true,
+									"tableOption": {
+										"value": "@{item().DestTable}",
+										"type": "Expression"
+									},
+									"disableMetricsCollection": false
+								},
+								"enableStaging": false,
+								"translator": {
+									"type": "TabularTranslator",
+									"typeConversion": true,
+									"typeConversionSettings": {
+										"allowDataTruncation": true,
+										"treatBooleanAsNumber": false
+									}
+								}
+							},
+							"inputs": [
+								{
+									"referenceName": "SrcPayments",
+									"type": "DatasetReference",
+									"parameters": {
+										"Table_Name": "PaymentsFull"
+									}
+								}
+							],
+							"outputs": [
+								{
+									"referenceName": "DataMart",
+									"type": "DatasetReference",
+									"parameters": {
+										"Table": {
+											"value": "@item().DestTable",
+											"type": "Expression"
+										},
+										"Schema": {
+											"value": "@item().DestSchema",
+											"type": "Expression"
+										}
+									}
+								}
+							]
+						},
+						{
+							"name": "LogStartOfPaymentsTableFullLoad",
+							"type": "Lookup",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "INSERT INTO Mgmt.Log_Execution_Results\n\t  (\n\t    RunId\n\t   ,StepNo\n\t   ,StoredProcedureName\n\t   ,ADFTaskType\n\t   ,StartDateTime\n\t   ,Execution_Status\n\t  )\n  SELECT \n            @{variables('RunId')}\n\t   ,'Step-5'\n\t   ,'NA'\n\t   ,'Pyaments Table Full Load -'+'@{item().SourceTable}'\n\t   ,getdate()\n\t   ,0\nSELECT 'N/A'",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DataMart",
+									"type": "DatasetReference",
+									"parameters": {
+										"Table": "Users",
+										"Schema": "Stg"
+									}
+								}
+							}
+						},
+						{
+							"name": "PaymentsTableFullLoad_Success",
+							"type": "Lookup",
+							"dependsOn": [
+								{
+									"activity": "PaymentsTableFullLoad",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "DECLARE @LogID int\n\n   SELECT @LogID=MAX(LogId) FROM Mgmt.Log_Execution_Results\n   WHERE ADFTaskType='Payments Table Full Load -'+'@{item().SourceTable}'\n     AND RunId=@{variables('RunId')}\n\nUPDATE Mgmt.Log_Execution_Results\n   SET Execution_Status=1\n      ,EndDateTime=getdate()\n\t  ,FullJobStatus='Pending'\n WHERE LogId=@LogID\n   AND RunID=@{variables('RunId')}\n\nSELECT 1",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DataMart",
+									"type": "DatasetReference",
+									"parameters": {
+										"Table": "Users",
+										"Schema": "Stg"
+									}
+								}
+							}
+						},
+						{
+							"name": "PaymentsTableFullLoad_Fail",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "PaymentsTableFullLoad",
+									"dependencyConditions": [
+										"Failed"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[dbo].[InsertLogErrorDetails]",
+								"storedProcedureParameters": {
+									"ErrorMessage": {
+										"value": {
+											"value": "@{activity('PaymentsTableFullLoad').Error.message}",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"RunId": {
+										"value": {
+											"value": "@variables('RunId')",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									},
+									"TaskType": {
+										"value": {
+											"value": "Payments Table Full Load -'+'@{item().SourceTable}",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "datamart_stagingDB_linkedservices",
+								"type": "LinkedServiceReference"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "GetDASPaymentsMetadataIncremental",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "SetRunId",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": "select *  FROM [Mgmt].[Config_StgPmnts] where LoadType = 'Incremental' and SourceDBName = 'DASPayments'",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DataMart",
+						"type": "DatasetReference",
+						"parameters": {
+							"Table": "test",
+							"Schema": "test"
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEachPaymentsTable_Incremental",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "GetDASPaymentsMetadataIncremental",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('GetDASPaymentsMetadataIncremental').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "PaymentsIncremental",
+							"type": "Copy",
+							"dependsOn": [
+								{
+									"activity": "LogStartOfPaymentsTableIncrementalLoad",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "@concat('select ',item().ColumnsToInclude,' from ',item().SourceTable,' ', replace(replace(item().WhereClause,'ParamAcademicYear',pipeline().parameters.AcademicYear),'ParamCollectionPeriod',pipeline().parameters.CollectionPeriod))",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"sink": {
+									"type": "AzureSqlSink",
+									"preCopyScript": {
+										"value": "TRUNCATE TABLE @{concat(item().DestSchema,'.',item().DestTable)}",
+										"type": "Expression"
+									},
+									"writeBehavior": "insert",
+									"sqlWriterUseTableLock": true,
+									"tableOption": {
+										"value": "@{item().DestTable}",
+										"type": "Expression"
+									},
+									"disableMetricsCollection": false
+								},
+								"enableStaging": false,
+								"translator": {
+									"type": "TabularTranslator",
+									"typeConversion": true,
+									"typeConversionSettings": {
+										"allowDataTruncation": true,
+										"treatBooleanAsNumber": false
+									}
+								}
+							},
+							"inputs": [
+								{
+									"referenceName": "SrcPayments",
+									"type": "DatasetReference",
+									"parameters": {
+										"Table_Name": "PaymentsIncremental"
+									}
+								}
+							],
+							"outputs": [
+								{
+									"referenceName": "DataMart",
+									"type": "DatasetReference",
+									"parameters": {
+										"Table": {
+											"value": "@item().DestTable",
+											"type": "Expression"
+										},
+										"Schema": {
+											"value": "@item().DestSchema",
+											"type": "Expression"
+										}
+									}
+								}
+							]
+						},
+						{
+							"name": "IncrementalLoad",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "PaymentsIncremental",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": {
+									"value": "@item().MergeStoredProcedure",
+									"type": "Expression"
+								},
+								"storedProcedureParameters": {
+									"AcademicYear": {
+										"value": {
+											"value": "@pipeline().parameters.AcademicYear",
+											"type": "Expression"
+										},
+										"type": "Int16"
+									},
+									"CollectionPeriod": {
+										"value": {
+											"value": "@pipeline().parameters.CollectionPeriod",
+											"type": "Expression"
+										},
+										"type": "Int16"
+									},
+									"RunId": {
+										"value": {
+											"value": "@variables('RunId')",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "datamart_stagingDB_linkedservices",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "LogStartOfPaymentsTableIncrementalLoad",
+							"type": "Lookup",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "INSERT INTO Mgmt.Log_Execution_Results\n\t  (\n\t    RunId\n\t   ,StepNo\n\t   ,StoredProcedureName\n\t   ,ADFTaskType\n\t   ,StartDateTime\n\t   ,Execution_Status\n\t  )\n  SELECT \n            @{variables('RunId')}\n\t   ,'Step-5'\n\t   ,'NA'\n\t   ,'Pyaments Table Incremental Load -'+'@{item().SourceTable}'\n\t   ,getdate()\n\t   ,0\nSELECT 'N/A'",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DataMart",
+									"type": "DatasetReference",
+									"parameters": {
+										"Table": "Users",
+										"Schema": "Stg"
+									}
+								}
+							}
+						},
+						{
+							"name": "PaymentsTableIncrementalLoad_Success",
+							"type": "Lookup",
+							"dependsOn": [
+								{
+									"activity": "IncrementalLoad",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "DECLARE @LogID int\n\n   SELECT @LogID=MAX(LogId) FROM Mgmt.Log_Execution_Results\n   WHERE ADFTaskType='Payments Table Incremental Load -'+'@{item().SourceTable}'\n     AND RunId=@{variables('RunId')}\n\nUPDATE Mgmt.Log_Execution_Results\n   SET Execution_Status=1\n      ,EndDateTime=getdate()\n\t  ,FullJobStatus='Pending'\n WHERE LogId=@LogID\n   AND RunID=@{variables('RunId')}\n\nSELECT 1",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DataMart",
+									"type": "DatasetReference",
+									"parameters": {
+										"Table": "Users",
+										"Schema": "Stg"
+									}
+								}
+							}
+						},
+						{
+							"name": "PaymentsTableIncrementalLoad_Fail",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "IncrementalLoad",
+									"dependencyConditions": [
+										"Failed"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[dbo].[InsertLogErrorDetails]",
+								"storedProcedureParameters": {
+									"ErrorMessage": {
+										"value": {
+											"value": "@{activity('PaymentsIncremental').Error.message}",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"RunId": {
+										"value": {
+											"value": "@variables('RunId')",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									},
+									"TaskType": {
+										"value": {
+											"value": "Payments Table Incremental Load -'+'@{item().SourceTable}",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "datamart_stagingDB_linkedservices",
+								"type": "LinkedServiceReference"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "GetDASPaymentsAuditMetadataFull",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "SetRunId",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": "select *  FROM [Mgmt].[Config_StgPmnts] where LoadType = 'Full' and SourceDBName = 'DASPayments_Audit'",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DataMart",
+						"type": "DatasetReference",
+						"parameters": {
+							"Table": "test",
+							"Schema": "test"
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "GetDASPaymentsAuditMetadataIncremental",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "SetRunId",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": "select *  FROM [Mgmt].[Config_StgPmnts] where LoadType = 'Incremental' and SourceDBName = 'DASPayments_Audit'",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DataMart",
+						"type": "DatasetReference",
+						"parameters": {
+							"Table": "test",
+							"Schema": "test"
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEachPaymentsAudit_FullLoad",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "GetDASPaymentsAuditMetadataFull",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('GetDASPaymentsAuditMetadataFull').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "PaymentsAudit_Full",
+							"type": "Copy",
+							"dependsOn": [
+								{
+									"activity": "LogStartOfPaymentsAuditTableFullLoad",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "@concat('select ',item().ColumnsToInclude,' from ',item().SourceTable,' ', replace(replace(item().WhereClause,'ParamAcademicYear',pipeline().parameters.AcademicYear),'ParamCollectionPeriod',pipeline().parameters.CollectionPeriod))",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"sink": {
+									"type": "AzureSqlSink",
+									"preCopyScript": {
+										"value": "TRUNCATE TABLE @{concat(item().DestSchema,'.',item().DestTable)}",
+										"type": "Expression"
+									},
+									"writeBehavior": "insert",
+									"sqlWriterUseTableLock": true,
+									"tableOption": {
+										"value": "@{item().DestTable}",
+										"type": "Expression"
+									},
+									"disableMetricsCollection": false
+								},
+								"enableStaging": false,
+								"translator": {
+									"type": "TabularTranslator",
+									"typeConversion": true,
+									"typeConversionSettings": {
+										"allowDataTruncation": true,
+										"treatBooleanAsNumber": false
+									}
+								}
+							},
+							"inputs": [
+								{
+									"referenceName": "DestPaymentsArchive",
+									"type": "DatasetReference",
+									"parameters": {
+										"Table_Name": "PaymentsAudit"
+									}
+								}
+							],
+							"outputs": [
+								{
+									"referenceName": "DataMart",
+									"type": "DatasetReference",
+									"parameters": {
+										"Table": {
+											"value": "@item().DestTable",
+											"type": "Expression"
+										},
+										"Schema": {
+											"value": "@item().DestSchema",
+											"type": "Expression"
+										}
+									}
+								}
+							]
+						},
+						{
+							"name": "LogStartOfPaymentsAuditTableFullLoad",
+							"type": "Lookup",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "INSERT INTO Mgmt.Log_Execution_Results\n\t  (\n\t    RunId\n\t   ,StepNo\n\t   ,StoredProcedureName\n\t   ,ADFTaskType\n\t   ,StartDateTime\n\t   ,Execution_Status\n\t  )\n  SELECT \n            @{variables('RunId')}\n\t   ,'Step-5'\n\t   ,'NA'\n\t   ,'Pyaments Audit Table Full Load -'+'@{item().SourceTable}'\n\t   ,getdate()\n\t   ,0\nSELECT 'N/A'",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DataMart",
+									"type": "DatasetReference",
+									"parameters": {
+										"Table": "Users",
+										"Schema": "Stg"
+									}
+								}
+							}
+						},
+						{
+							"name": "PaymentsAuditTableFullLoad_Success",
+							"type": "Lookup",
+							"dependsOn": [
+								{
+									"activity": "PaymentsAudit_Full",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "DECLARE @LogID int\n\n   SELECT @LogID=MAX(LogId) FROM Mgmt.Log_Execution_Results\n   WHERE ADFTaskType='Payments Audit Table Full Load -'+'@{item().SourceTable}'\n     AND RunId=@{variables('RunId')}\n\nUPDATE Mgmt.Log_Execution_Results\n   SET Execution_Status=1\n      ,EndDateTime=getdate()\n\t  ,FullJobStatus='Pending'\n WHERE LogId=@LogID\n   AND RunID=@{variables('RunId')}\n\nSELECT 1",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DataMart",
+									"type": "DatasetReference",
+									"parameters": {
+										"Table": "Users",
+										"Schema": "Stg"
+									}
+								}
+							}
+						},
+						{
+							"name": "PaymentsAuditTableFullLoad_Fail",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "PaymentsAudit_Full",
+									"dependencyConditions": [
+										"Failed"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[dbo].[InsertLogErrorDetails]",
+								"storedProcedureParameters": {
+									"ErrorMessage": {
+										"value": {
+											"value": "@{activity('PaymentsAudit_Full').Error.message}",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"RunId": {
+										"value": {
+											"value": "@variables('RunId')",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									},
+									"TaskType": {
+										"value": {
+											"value": "Payments Audit Table Full Load -'+'@{item().SourceTable}",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "datamart_stagingDB_linkedservices",
+								"type": "LinkedServiceReference"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "ForEachPaymentsAudit_Incremental",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "GetDASPaymentsAuditMetadataIncremental",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('GetDASPaymentsAuditMetadataIncremental').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "PaymentsAudit_Incremental",
+							"type": "Copy",
+							"dependsOn": [
+								{
+									"activity": "LogStartOfPaymentsAuditTableIncrementalLoad",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "@concat('select ',item().ColumnsToInclude,' from ',item().SourceTable,' ', replace(replace(item().WhereClause,'ParamAcademicYear',pipeline().parameters.AcademicYear),'ParamCollectionPeriod',pipeline().parameters.CollectionPeriod))",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"sink": {
+									"type": "AzureSqlSink",
+									"preCopyScript": {
+										"value": "TRUNCATE TABLE @{concat(item().DestSchema,'.',item().DestTable)}",
+										"type": "Expression"
+									},
+									"writeBehavior": "insert",
+									"sqlWriterUseTableLock": true,
+									"tableOption": {
+										"value": "@{item().DestTable}",
+										"type": "Expression"
+									},
+									"disableMetricsCollection": false
+								},
+								"enableStaging": false,
+								"translator": {
+									"type": "TabularTranslator",
+									"typeConversion": true,
+									"typeConversionSettings": {
+										"allowDataTruncation": true,
+										"treatBooleanAsNumber": false
+									}
+								}
+							},
+							"inputs": [
+								{
+									"referenceName": "DestPaymentsArchive",
+									"type": "DatasetReference",
+									"parameters": {
+										"Table_Name": "Test"
+									}
+								}
+							],
+							"outputs": [
+								{
+									"referenceName": "DataMart",
+									"type": "DatasetReference",
+									"parameters": {
+										"Table": {
+											"value": "@item().DestTable",
+											"type": "Expression"
+										},
+										"Schema": {
+											"value": "@item().DestSchema",
+											"type": "Expression"
+										}
+									}
+								}
+							]
+						},
+						{
+							"name": "IncrementalLoad_Audit",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "PaymentsAudit_Incremental",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": {
+									"value": "@item().MergeStoredProcedure",
+									"type": "Expression"
+								},
+								"storedProcedureParameters": {
+									"AcademicYear": {
+										"value": {
+											"value": "@pipeline().parameters.AcademicYear",
+											"type": "Expression"
+										},
+										"type": "Int16"
+									},
+									"CollectionPeriod": {
+										"value": {
+											"value": "@pipeline().parameters.CollectionPeriod",
+											"type": "Expression"
+										},
+										"type": "Int16"
+									},
+									"RunId": {
+										"value": {
+											"value": "@variables('RunId')",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "datamart_stagingDB_linkedservices",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "LogStartOfPaymentsAuditTableIncrementalLoad",
+							"type": "Lookup",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "INSERT INTO Mgmt.Log_Execution_Results\n\t  (\n\t    RunId\n\t   ,StepNo\n\t   ,StoredProcedureName\n\t   ,ADFTaskType\n\t   ,StartDateTime\n\t   ,Execution_Status\n\t  )\n  SELECT \n            @{variables('RunId')}\n\t   ,'Step-5'\n\t   ,'NA'\n\t   ,'Pyaments Audit Table Incremental Load -'+'@{item().SourceTable}'\n\t   ,getdate()\n\t   ,0\nSELECT 'N/A'",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DataMart",
+									"type": "DatasetReference",
+									"parameters": {
+										"Table": "Users",
+										"Schema": "Stg"
+									}
+								}
+							}
+						},
+						{
+							"name": "PaymentsAuditTableIncrementalLoad",
+							"type": "Lookup",
+							"dependsOn": [
+								{
+									"activity": "IncrementalLoad_Audit",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "DECLARE @LogID int\n\n   SELECT @LogID=MAX(LogId) FROM Mgmt.Log_Execution_Results\n   WHERE ADFTaskType='Payments Audit Table Incremental Load -'+'@{item().SourceTable}'\n     AND RunId=@{variables('RunId')}\n\nUPDATE Mgmt.Log_Execution_Results\n   SET Execution_Status=1\n      ,EndDateTime=getdate()\n\t  ,FullJobStatus='Pending'\n WHERE LogId=@LogID\n   AND RunID=@{variables('RunId')}\n\nSELECT 1",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DataMart",
+									"type": "DatasetReference",
+									"parameters": {
+										"Table": "Users",
+										"Schema": "Stg"
+									}
+								}
+							}
+						},
+						{
+							"name": "PaymentsAuditTableIncrementalLoad_fail",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "IncrementalLoad_Audit",
+									"dependencyConditions": [
+										"Failed"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[dbo].[InsertLogErrorDetails]",
+								"storedProcedureParameters": {
+									"ErrorMessage": {
+										"value": {
+											"value": "@{activity('PaymentsAudit_Incremental').Error.message}",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"RunId": {
+										"value": {
+											"value": "@variables('RunId')",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									},
+									"TaskType": {
+										"value": {
+											"value": "Payments Audit Table Incremental Load -'+'@{item().SourceTable}",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "datamart_stagingDB_linkedservices",
+								"type": "LinkedServiceReference"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "GetRunId",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "GenerateRunId",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": "SELECT CAST(MAX(RunId) AS VARCHAR(256)) as RunId FROM Mgmt.Log_RunId where PipelineName = 'LoadPaymentsToDataMgmt'",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DataMart",
+						"type": "DatasetReference",
+						"parameters": {
+							"Table": "DataMart",
+							"Schema": "DataMart"
+						}
+					}
+				}
+			},
+			{
+				"name": "SetRunId",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "GetRunId",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "RunId",
+					"value": {
+						"value": "@{activity('GetRunId').output.firstRow.RunId}",
+						"type": "Expression"
+					}
+				}
+			}
+		],
+		"parameters": {
+			"AcademicYear": {
+				"type": "string"
+			},
+			"CollectionPeriod": {
+				"type": "string"
+			}
+		},
+		"variables": {
+			"RunId": {
+				"type": "String",
+				"defaultValue": "[StgPmts].[ImportJob]"
+			}
+		},
+		"annotations": [],
+		"lastPublishTime": "2025-06-10T14:25:03Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

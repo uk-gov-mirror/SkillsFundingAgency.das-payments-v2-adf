@@ -1,0 +1,15 @@
+{
+	"name": "DCOL-MO-DataFactoryDAS-WEU",
+	"properties": {
+		"trustModeClaimForMi": {
+			"value": "Disabled",
+			"editable": true
+		}
+	},
+	"location": "westeurope",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "20ee4983-8f96-4231-a8f3-0d808e8bb073",
+		"tenantId": "3aacc835-4b83-483d-841d-cd787f6f1486"
+	}
+}
